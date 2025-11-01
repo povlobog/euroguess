@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EuroGuess</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div>
+        <h1>EuroGuess</h1>
+        <p class="subtitle">Guess the EuroLeague player by stats</p>
+      </div>
+
+      <div class="auth-box">
+        <div id="authStatus" class="muted">Not signed in</div>
+        <div class="auth-actions">
+          <button id="openLoginBtn" class="secondary">Login</button>
+          <button id="openRegisterBtn" class="secondary">Register</button>
+          <button id="logoutBtn" class="secondary hidden">Logout</button>
+        </div>
+        <div id="balanceBox" class="balance hidden">Balance: <span id="balanceVal">0</span> pts</div>
+      </div>
+    </header>
+
+    <section class="controls">
+      <button id="newGameBtn">New Game</button>
+      <div class="stats">
+        <span id="statusText">Click “New Game” to start</span>
+      </div>
+    </section>
+
+    <section id="gameBox" class="hidden">
+      <div class="hints">
+        <h2>Hints</h2>
+        <ul id="hintsList"></ul>
+      </div>
+
+      <div id="result" class="result"></div>
+
+      <div class="guess">
+        <h2>Your Guess</h2>
+        <div class="input-row">
+          <input id="guessInput" type="text" placeholder="Type a player name... (prefix match)" autocomplete="off" />
+          <button id="submitGuessBtn">Submit</button>
+        </div>
+        <div id="suggestions" class="suggestions hidden"></div>
+      </div>
+
+      <div class="attempts">
+        <h3>Attempts</h3>
+        <ol id="attemptsList"></ol>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <small>Static MVP – HTML/CSS/JS only. Auth & balance are stored locally for now.</small>
+    </footer>
+  </div>
+
+  <!-- AUTH MODALS -->
+  <div id="modalMask" class="modal-mask hidden"></div>
+
+  <div id="loginModal" class="modal hidden">
+    <h3>Login</h3>
+    <div class="form-row">
+      <label>Username</label>
+      <input id="loginUser" type="text" autocomplete="username" />
+    </div>
+    <div class="form-row">
+      <label>Password</label>
+      <input id="loginPass" type="password" autocomplete="current-password" />
+    </div>
+    <div class="row-gap">
+      <button id="loginSubmit">Login</button>
+    </div>
+    <p class="muted small">Demo: čuva se lokalno (localStorage). Za produkciju ide backend + hash.</p>
+  </div>
+
+  <div id="registerModal" class="modal hidden">
+    <h3>Register</h3>
+    <div class="form-row">
+      <label>Username</label>
+      <input id="regUser" type="text" autocomplete="username" />
+    </div>
+    <div class="form-row">
+      <label>Password</label>
+      <input id="regPass" type="password" autocomplete="new-password" />
+    </div>
+    <div class="row-gap">
+      <button id="registerSubmit">Create account</button>
+    </div>
+    <p class="muted small">Demo: lozinka ide plain u localStorage (privremeno).</p>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
