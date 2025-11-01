@@ -5,19 +5,32 @@ const cors     = require('cors');
 const mongoose = require('mongoose');
 const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
+const path     = require('path');
 
 const app  = express();
 const PORT = process.env.PORT || 8080;
 const URI  = process.env.MONGODB_URI || "";
 
 // ---------------------------------------------------------------------------
-// CORS: dozvoli sve (radi i za file:// tj. Origin: null, i za preflight)
-// U produkciji možeš zameniti sa whitelist logikom.
+// CORS whitelist (radi i za file:// jer origin bude null).
+// Ako menjaš frontend domen, samo dodaj u niz.
 // ---------------------------------------------------------------------------
-app.use(cors());
-app.options('*', cors());
+const ALLOWED_ORIGINS = [
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  'https://uess.onrender.com',       // tvoj frontend (static)
+  'https://euroguess.onrender.com'   // sam backend (ok je dozvoliti)
+];
+
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);                 // npr. file://, mobilna app, curl
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'));
+  }
+}));
+app.options('*', cors());             // preflight
 app.use(express.json());
-const path = require('path');
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------------------------------------------------------------------
@@ -54,6 +67,9 @@ const User = mongoose.model('User', userSchema);
 const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function signToken(user) {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is not set');
+  }
   return jwt.sign({ uid: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 }
 
@@ -71,21 +87,19 @@ function auth(req, res, next) {
 }
 
 // ---------------------------------------------------------------------------
-// Rute: health
+// Health
 // ---------------------------------------------------------------------------
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // ---------------------------------------------------------------------------
-// Rute: AUTH (register/login/me/balance)
+// AUTH (register / login / me / balance)
 // ---------------------------------------------------------------------------
-
-// REGISTER
 app.post('/auth/register', async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'Missing fields' });
 
-    const uname = (username || '').toLowerCase().trim();
+    const uname = String(username).toLowerCase().trim();
     const exists = await User.findOne({ username: uname });
     if (exists) return res.status(409).json({ error: 'Username already exists' });
 
@@ -100,11 +114,10 @@ app.post('/auth/register', async (req, res) => {
   }
 });
 
-// LOGIN
 app.post('/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body || {};
-    const uname = (username || '').toLowerCase().trim();
+    const uname = String(username || '').toLowerCase().trim();
 
     const user = await User.findOne({ username: uname });
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
@@ -120,14 +133,12 @@ app.post('/auth/login', async (req, res) => {
   }
 });
 
-// ME
 app.get('/me', auth, async (req, res) => {
   const u = await User.findById(req.userId).lean();
   if (!u) return res.status(404).json({ error: 'User not found' });
   res.json({ username: u.username, balance: u.balance });
 });
 
-// ADD BALANCE (pozivaš kada korisnik pogodi igrača)
 app.post('/me/balance/add', auth, async (req, res) => {
   const { points } = req.body || {};
   const inc = Number(points) || 0;
@@ -143,10 +154,8 @@ app.post('/me/balance/add', auth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Rute: PLAYERS (tvoja logika za igru)
+// PLAYERS
 // ---------------------------------------------------------------------------
-
-// Debug: vrati dokumente kako su u bazi (nemoj koristiti u frontendu)
 app.get("/players/raw", async (_req, res) => {
   try {
     const col  = mongoose.connection.db.collection("players");
@@ -158,38 +167,24 @@ app.get("/players/raw", async (_req, res) => {
   }
 });
 
-// Produkcijska ruta:
-// - GP >= 10
-// - opcioni ?q= prefiks (početak bilo koje reči u imenu)
-// - vraća samo polja potrebna frontendu i bez _id
 app.get("/players", async (req, res) => {
   try {
     const col = mongoose.connection.db.collection("players");
     const q = (req.query.q || "").trim();
 
     const pipeline = [
-      // Koalesciraj ime u polje "name" (pokrivamo varijante naziva u tvojoj bazi)
-      {
-        $addFields: {
-          name: {
-            $ifNull: [
-              "$FullNameVerified",
-              { $ifNull: ["$fullNameVerified", { $ifNull: ["$NameVerified", null] }] }
-            ]
-          }
+      { $addFields: {
+          name: { $ifNull: ["$FullNameVerified", { $ifNull: ["$fullNameVerified", { $ifNull: ["$NameVerified", null] }] }] }
         }
       },
-      // Minimalno 10 utakmica
       { $match: { GP: { $gte: 10 } } },
     ];
 
-    // Ako je ?q= zadat — prefiks bilo koje reči (case-insensitive)
     if (q) {
       const re = new RegExp(`(^|\\s)${esc(q)}`, "i");
       pipeline.push({ $match: { name: { $regex: re } } });
     }
 
-    // Vrati samo polja koja front koristi, bez _id
     pipeline.push({
       $project: {
         _id: 0,
