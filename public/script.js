@@ -1,136 +1,140 @@
 (function () {
   const $ = (s) => document.querySelector(s);
 
-  // === API base: produkcija => isti origin, lokalno => localhost:8080 ===
-  const BASE_API =
-    (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-      ? 'http://localhost:8080'
-      : ''; // relativni put na istom originu
+  // ====== API base ======
+  const BASE_API = "https://euroguess.onrender.com"; // ili relativno: "" (ako front i API su na istom hostu)
+  const TOKEN_KEY = "EG_TOKEN_V1";
 
-  // ===== STATE =====
-  let playersAll = [];            // skup igrača (GP >= 10)
-  let validNames = new Set();     // skup normalizovanih imena
+  // ====== STATE ======
+  let playersAll = [];
+  let validNames = new Set();
   let target = null, attempts = 0, revealed = 0, over = false;
-  let tried = new Set();          // sprečava duple pokušaje
+  let tried = new Set();
+  let me = null; // {username, balance} ili null
 
-  // ===== SCORING =====
-  function pointsForAttempt(n) {
-    const table = [100, 70, 50, 35, 25, 18, 12, 8, 5, 3]; // 1..10
-    return n >= 1 && n <= table.length ? table[n - 1] : 0;
-  }
+  // ====== util ======
+  const normalize = s => (s || "").trim().toLowerCase();
+  const fmt = v => (v == null ? "?" : (typeof v === "number" ? Math.round(v * 10) / 10 : v));
+  const safe = s => s || "?";
 
-  // ===== AUTH (pravi API) =====
-  const LS_TOKEN = 'EG_JWT_V1';
+  // ====== token helpers ======
+  const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
+  const getToken = () => localStorage.getItem(TOKEN_KEY);
+  const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
-  function saveToken(t) { localStorage.setItem(LS_TOKEN, t); }
-  function getToken()   { return localStorage.getItem(LS_TOKEN); }
-  function clearToken() { localStorage.removeItem(LS_TOKEN); }
-
-  async function apiRegister(username, password) {
-    const r = await fetch(`${BASE_API}/auth/register`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ username, password })
+  // ====== fetch helpers ======
+  async function apiGet(path) {
+    const res = await fetch(BASE_API + path, {
+      headers: { "Authorization": `Bearer ${getToken() || ""}` }
     });
-    if (!r.ok) throw new Error((await r.json()).error || 'Register failed');
-    return r.json(); // {token, user:{username,balance}}
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
   }
-
-  async function apiLogin(username, password) {
-    const r = await fetch(`${BASE_API}/auth/login`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ username, password })
-    });
-    if (!r.ok) throw new Error((await r.json()).error || 'Login failed');
-    return r.json(); // {token, user:{username,balance}}
-  }
-
-  async function apiMe() {
-    const tok = getToken(); if (!tok) return null;
-    const r = await fetch(`${BASE_API}/me`, {
-      headers: { Authorization: `Bearer ${tok}` }
-    });
-    if (!r.ok) return null;
-    return r.json(); // {username, balance}
-  }
-
-  async function apiAddBalance(points) {
-    const tok = getToken(); if (!tok) throw new Error('Not signed in');
-    const r = await fetch(`${BASE_API}/me/balance/add`, {
-      method: 'POST',
+  async function apiPost(path, body) {
+    const res = await fetch(BASE_API + path, {
+      method: "POST",
       headers: {
-        'Content-Type':'application/json',
-        Authorization: `Bearer ${tok}`
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${getToken() || ""}`
       },
-      body: JSON.stringify({ points })
+      body: JSON.stringify(body || {})
     });
-    if (!r.ok) throw new Error((await r.json()).error || 'Balance add failed');
-    return r.json(); // {balance}
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
   }
 
-  // ===== UI refs =====
-  const ui = {
-    authStatus: $("#authStatus"),
-    balanceBox: $("#balanceBox"),
-    balanceVal: $("#balanceVal"),
-    loginModal: $("#loginModal"),
-    registerModal: $("#registerModal"),
-    modalMask: $("#modalMask"),
-    openLoginBtn: $("#openLoginBtn"),
-    openRegisterBtn: $("#openRegisterBtn"),
-    logoutBtn: $("#logoutBtn"),
-    loginSubmit: $("#loginSubmit"),
-    registerSubmit: $("#registerSubmit"),
-    loginUser: $("#loginUser"),
-    loginPass: $("#loginPass"),
-    regUser: $("#regUser"),
-    regPass: $("#regPass"),
-    statusText: $("#statusText"),
-  };
-
-  const show  = (el) => el.classList.remove("hidden");
-  const hide  = (el) => el.classList.add("hidden");
-  const open  = (m)  => { show(ui.modalMask); show(m); };
-  const close = ()    => { hide(ui.modalMask); hide(ui.loginModal); hide(ui.registerModal); };
-
-  // ==== AUTH UI ====
-  async function refreshAuthUI() {
-    const me = await apiMe();
-    if (!me) {
-      ui.authStatus.textContent = "Not signed in";
-      hide(ui.logoutBtn); show(ui.openLoginBtn); show(ui.openRegisterBtn); hide(ui.balanceBox);
-      ui.balanceVal.textContent = '0';
-      return;
+  // ====== auth API ======
+  async function tryMe() {
+    try {
+      const data = await apiGet("/me");
+      me = data; // {username, balance}
+    } catch {
+      me = null;
     }
-    ui.authStatus.textContent = `Signed in as ${me.username}`;
-    show(ui.logoutBtn); hide(ui.openLoginBtn); hide(ui.openRegisterBtn); show(ui.balanceBox);
-    ui.balanceVal.textContent = me.balance ?? 0;
+    refreshAuthUI();
+  }
+  async function doLogin(username, password) {
+    const data = await apiPost("/auth/login", { username, password });
+    setToken(data.token);
+    me = data.user; // {username, balance}
+    refreshAuthUI();
+  }
+  async function doRegister(username, password) {
+    const data = await apiPost("/auth/register", { username, password });
+    setToken(data.token);
+    me = data.user;
+    refreshAuthUI();
+  }
+  function doLogout() {
+    clearToken();
+    me = null;
+    refreshAuthUI();
   }
 
-  // ===== API helpers =====
+  // ====== balance (posle pogođene igre) ======
+  async function addBalance(points) {
+    if (!me) return;
+    const data = await apiPost("/me/balance/add", { points });
+    me.balance = data.balance;
+    refreshAuthUI();
+    // osveži leaderboard kad se promeni balans
+    loadLeaderboard();
+  }
+
+  // ====== players/leaderboard ======
   async function fetchAllPlayers() {
     const res = await fetch(`${BASE_API}/players`);
     if (!res.ok) throw new Error("Failed to load players");
-    return await res.json(); // [{name, team, country, position, stats:{...}}, ...]
+    return res.json();
   }
   async function fetchSuggestions(prefix) {
     if (!prefix) return [];
     const res = await fetch(`${BASE_API}/players?q=${encodeURIComponent(prefix)}`);
     if (!res.ok) return [];
-    return await res.json();
+    return res.json();
+  }
+  async function loadLeaderboard() {
+    try {
+      const top = await (await fetch(`${BASE_API}/leaderboard`)).json();
+      const list = $("#lbList");
+      list.innerHTML = top.map((u, i) =>
+        `<li><strong>${u.username}</strong> — ${u.balance} pts</li>`
+      ).join("");
+    } catch {
+      $("#lbList").innerHTML = `<li>Failed to load leaderboard.</li>`;
+    }
   }
 
-  // ===== GAME =====
-  const normalize = (s) => (s || "").trim().toLowerCase();
-  function fmt(v) { if (v == null) return "?"; return typeof v === "number" ? Math.round(v * 10) / 10 : v; }
-  const safe = (s) => s || "?";
+  // ====== UI refs ======
+  const ui = {
+    authGate: $("#authGate"),
+    logoutBtn: $("#logoutBtn"),
+    balanceBox: $("#balanceBox"),
+    balanceVal: $("#balanceVal"),
+    statusText: $("#statusText"),
+    newGameBtn: $("#newGameBtn"),
+    submitGuessBtn: $("#submitGuessBtn"),
+    guessInput: $("#guessInput"),
+  };
 
   function buildValidNameSet(list) {
     validNames = new Set(list.map(p => normalize(p.name)));
   }
-  function isValidName(name) {
-    return validNames.has(normalize(name));
+  const isValidName = (name) => validNames.has(normalize(name));
+
+  function renderHints() {
+    const s = (target && target.stats) || {};
+    const out = [
+      `PTS: ${fmt(s.pts)}`,
+      `2P%: ${fmt(s.twoPct)}`,
+      `3P%: ${fmt(s.threePct)}`,
+      `AST: ${fmt(s.ast)}`,
+      `TR: ${fmt(s.tr)}`
+    ];
+    if (revealed >= 1) out.push(`Position: ${safe(target.position)}`);
+    if (revealed >= 2) out.push(`Country: ${safe(target.country)}`);
+    if (revealed >= 3) out.push(`Team: ${safe(target.team)}`);
+    $("#hintsList").innerHTML = out.map(x => `<li>${x}</li>`).join("");
   }
 
   function pickRandom() {
@@ -138,29 +142,9 @@
     return playersAll[Math.floor(Math.random() * playersAll.length)];
   }
 
- function renderHints() {
-  const s = (target && target.stats) || {};
-  const out = [
-    `PTS: ${fmt(s.pts)}`,
-    `2P%: ${fmt(s.twoPct)}`,
-    `3P%: ${fmt(s.threePct)}`,
-    `AST: ${fmt(s.ast)}`,
-    `TR: ${fmt(s.tr)}`
-  ];
-  if (revealed >= 1) out.push(`Position: ${safe(target.position)}`);
-  if (revealed >= 2) out.push(`Country: ${safe(target.country)}`);
-  if (revealed >= 3) out.push(`Team: ${safe(target.team)}`);
-  $("#hintsList").innerHTML = out.map(x => `<li>${x}</li>`).join("");
-}
-
-
   function reset() {
     target = pickRandom();
-    attempts = 0;
-    revealed = 0;
-    over = false;
-    tried = new Set();
-
+    attempts = 0; revealed = 0; over = false; tried = new Set();
     $("#attemptsList").innerHTML = "";
     $("#result").textContent = "";
     $("#result").className = "result";
@@ -169,26 +153,29 @@
     if (target) renderHints();
   }
 
-  async function submitGuess() {
-    if (over || !target) return;
+  function pointsForAttempt(n) {
+    const table = [100, 70, 50, 35, 25, 18, 12, 8, 5, 3];
+    return n >= 1 && n <= table.length ? table[n - 1] : 0;
+  }
 
-    const input = $("#guessInput");
+  function submitGuess() {
+    if (over || !target || !me) return;
+
+    const input = ui.guessInput;
     const val = input.value.trim();
     if (!val) return;
 
-    // Dozvoli samo imena iz baze (klik iz predloga)
+    // dozvoljeno samo ime iz baze (klik iz predloga)
     if (!isValidName(val)) {
-      $("#result").textContent = "⚠️ Izaberi igrača iz liste (klik na predlog). Slobodan unos nije dozvoljen.";
+      $("#result").textContent = "⚠️ Pick a player from the suggestions.";
       $("#result").className = "result bad";
       return;
     }
 
     const norm = normalize(val);
-
-    // blokiraj dupli pokušaj
     if (tried.has(norm)) {
       input.value = "";
-      $("#result").textContent = "⚠️ Već si pokušao tog igrača. Izaberi nekog drugog.";
+      $("#result").textContent = "⚠️ You already tried that player.";
       $("#result").className = "result bad";
       return;
     }
@@ -220,27 +207,13 @@
     // pogođeno
     over = true;
     const pts = pointsForAttempt(attempts);
-
-    // ako je ulogovan — sačuvaj poene u bazi
-    try {
-      const tok = getToken();
-      if (tok) {
-        const { balance } = await apiAddBalance(pts);
-        ui.balanceVal.textContent = balance ?? 0;
-      } else {
-        // nije ulogovan — samo upozorenje, igra radi
-        console.warn('Not signed in, points not saved.');
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
+    addBalance(pts); // -> API /me/balance/add
     $("#result").textContent = `🎉 Correct! It was ${target.name} — +${pts} pts`;
     $("#result").className = "result ok";
     ui.statusText.textContent = "Finished (WIN)";
   }
 
-  // Debounce util
+  // ====== suggestions (1+ slovo, debounce) ======
   function debounce(fn, wait = 200) {
     let t = null;
     return (...args) => {
@@ -248,109 +221,106 @@
       t = setTimeout(() => fn(...args), wait);
     };
   }
-
-  // Autocomplete: API ?q= prefix (od 1 slova, sa debounce; filtrira već pokušane)
   const handleSuggest = debounce(async (q) => {
     const box = $("#suggestions");
     const prefix = q.trim();
-
     if (prefix.length < 1) {
-      box.classList.add("hidden");
-      box.innerHTML = "";
-      return;
+      box.classList.add("hidden"); box.innerHTML = ""; return;
     }
-
     try {
       const list = await fetchSuggestions(prefix);
-      const filtered = list
-        .filter(p => !tried.has(normalize(p.name)))
-        .slice(0, 8);
-
+      const filtered = list.filter(p => !tried.has(normalize(p.name))).slice(0, 8);
       if (!filtered.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
-
       box.classList.remove("hidden");
-      box.innerHTML = "<ul>" + filtered
-        .map(p => `<li data-name="${p.name}">${p.name} — ${p.team || ""}</li>`)
-        .join("") + "</ul>";
-
+      box.innerHTML = "<ul>" + filtered.map(p =>
+        `<li data-name="${p.name}">${p.name} — ${p.team || ""}</li>`
+      ).join("") + "</ul>";
       box.querySelectorAll("li").forEach(li => {
         li.addEventListener("click", () => {
-          $("#guessInput").value = li.getAttribute("data-name");
+          ui.guessInput.value = li.getAttribute("data-name");
           box.classList.add("hidden");
         });
       });
     } catch {
-      box.classList.add("hidden");
-      box.innerHTML = "";
+      box.classList.add("hidden"); box.innerHTML = "";
     }
-  }, 200);
+  }, 250);
 
+  // ====== auth UI / gate ======
+  function refreshAuthUI() {
+    // balans + logout dugme
+    if (me) {
+      $("#authStatus").textContent = `Signed in as ${me.username}`;
+      ui.balanceVal.textContent = me.balance ?? 0;
+      $("#balanceBox").classList.remove("hidden");
+      $("#logoutBtn").classList.remove("hidden");
+
+      // skini “gate”, omogući igru
+      $("#gameBox").classList.remove("blocked");
+      $("#authGate").classList.add("hidden");
+      ui.newGameBtn.disabled = false;
+      ui.submitGuessBtn.disabled = false;
+      ui.guessInput.disabled = false;
+    } else {
+      $("#authStatus").textContent = "Not signed in";
+      $("#balanceBox").classList.add("hidden");
+      $("#logoutBtn").classList.add("hidden");
+
+      // prikaži “gate”, onemogući igru
+      $("#authGate").classList.remove("hidden");
+      ui.newGameBtn.disabled = true;
+      ui.submitGuessBtn.disabled = true;
+      ui.guessInput.disabled = true;
+    }
+  }
+
+  // ====== events ======
   function attachEvents() {
-    $("#newGameBtn").addEventListener("click", reset);
-
-    $("#submitGuessBtn").addEventListener("click", submitGuess);
-    $("#guessInput").addEventListener("keydown", e => { if (e.key === "Enter") submitGuess(); });
-    $("#guessInput").addEventListener("input", e => handleSuggest(e.target.value));
-
+    ui.newGameBtn.addEventListener("click", reset);
+    ui.submitGuessBtn.addEventListener("click", submitGuess);
+    ui.guessInput.addEventListener("keydown", e => { if (e.key === "Enter") submitGuess(); });
+    ui.guessInput.addEventListener("input", e => handleSuggest(e.target.value));
     document.addEventListener("click", (e) => {
       const s = $("#suggestions");
       if (s && !s.contains(e.target) && e.target.id !== "guessInput") s.classList.add("hidden");
     });
 
-    // auth modali
-    $("#openLoginBtn").addEventListener("click", () => open($("#loginModal")));
-    $("#openRegisterBtn").addEventListener("click", () => open($("#registerModal")));
-    $("#logoutBtn").addEventListener("click", () => { clearToken(); refreshAuthUI(); });
+    // login/register/logout
+    // (Ako imaš inpute unutar modala, samo zovi ove funkcije)
+    $("#logoutBtn")?.addEventListener("click", () => { doLogout(); });
 
-    // submit login/register
-    $("#loginSubmit").addEventListener("click", async () => {
-      try {
-        const out = await apiLogin($("#loginUser").value, $("#loginPass").value);
-        saveToken(out.token);
-        alert("✅ Uspešno ste se prijavili!");
-        close();
-        await refreshAuthUI();
-      } catch (err) {
-        alert("❌ Neuspešan login: " + err.message);
-      }
+    // Primer povezivanja na postojeća dugmad u modalima:
+    $("#loginSubmit")?.addEventListener("click", async () => {
+      const u = $("#loginUser").value, p = $("#loginPass").value;
+      try { await doLogin(u, p); alert("✅ Logged in!"); }
+      catch (e) { alert("❌ Login failed"); }
     });
-
-    $("#registerSubmit").addEventListener("click", async () => {
-      try {
-        const out = await apiRegister($("#regUser").value, $("#regPass").value);
-        saveToken(out.token);
-        alert("✅ Uspešno ste se registrovali!");
-        close();
-        await refreshAuthUI();
-      } catch (err) {
-        alert("❌ Greška: " + err.message);
-      }
+    $("#registerSubmit")?.addEventListener("click", async () => {
+      const u = $("#regUser").value, p = $("#regPass").value;
+      try { await doRegister(u, p); alert("✅ Registered!"); }
+      catch (e) { alert("❌ Register failed"); }
     });
-
-    // zatvaranje modala klikom na masku ili Escape
-    $("#modalMask").addEventListener("click", close);
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
   }
 
-  // ===== INIT =====
+  // ====== init ======
   (async function init() {
     attachEvents();
+    refreshAuthUI();
     ui.statusText.textContent = "Loading players…";
 
-    try {
-      // auth UI (ako već postoji token)
-      await refreshAuthUI();
+    // 1) probaj da pročitaš trenutnog korisnika
+    await tryMe();
 
-      // igrači
-      playersAll = await fetchAllPlayers();      // backend već filtrira GP ≥ 10
-      validNames = new Set(playersAll.map(p => normalize(p.name)));
-      if (!playersAll.length) {
-        ui.statusText.textContent = "No players loaded from API.";
-        return;
-      }
-      reset();
-    } catch (e) {
-      console.error(e);
+    // 2) leaderboard uvek prikazujemo
+    loadLeaderboard();
+
+    // 3) učitaj igrače (ovo nije privatno na serveru, UI ih samo skriva dok nisi ulogovan)
+    try {
+      playersAll = await fetchAllPlayers();
+      buildValidNameSet(playersAll);
+      if (me) reset();              // odmah pokreni igru samo ako je ulogovan
+      else ui.statusText.textContent = "Please log in to start a game.";
+    } catch {
       ui.statusText.textContent = "Failed to load players from API.";
     }
   })();
