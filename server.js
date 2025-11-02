@@ -32,6 +32,19 @@ app.use(cors({
 app.options('*', cors());             // preflight
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+// === Leaderboard (Top 10) ===
+app.get('/leaderboard', async (_req, res) => {
+  try {
+    const top = await User.find({}, { _id: 0, username: 1, balance: 1 })
+      .sort({ balance: -1, username: 1 })
+      .limit(10)
+      .lean();
+    res.json(top);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Failed to load leaderboard' });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Mongo konekcija
