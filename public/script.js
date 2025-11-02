@@ -3,7 +3,10 @@
   const $ = (s) => document.querySelector(s);
 
   // ================== PODESAVANJE ==================
-  const BASE_API  = "http://localhost:8080"; // za deploy promeni na tvoj host
+  const BASE_API =
+  (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? 'http://localhost:8080'
+    : ''; 
   const AUTH_MODE = "local";                  // "local" (danas) -> promeni u "api" kad ubacimo server auth
 
   // ================== STATE ==================
