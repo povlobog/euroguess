@@ -12,34 +12,70 @@ body{
 }
 .hidden{display:none}
 
-/* ===== Layout ===== */
-.container{max-width:960px;margin:0 auto;padding:18px}
+/* ===== Containers & Layout ===== */
+.container{max-width:1120px;margin:0 auto;padding:18px}
 .header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
 .subtitle{margin:.25rem 0 0;color:var(--muted)}
-.controls{display:flex;align-items:center;gap:12px;margin:8px 0 18px}
-.hints,.guess,.attempts{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+
+.layout{
+  display:grid; gap:16px;
+  grid-template-columns: 1fr 360px;   /* main + sidebar */
+  align-items:start;
+}
+.main{min-width:0}
+.sidebar{position:sticky; top:12px}
+
+/* One-column fallback on mobile */
+@media (max-width: 900px){
+  .layout{grid-template-columns: 1fr}
+  .sidebar{position:static}
+}
+
+/* ===== Reusable cards ===== */
+.card{
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:14px;
+}
+
+/* ===== Controls & Panels ===== */
+.controls{
+  display:flex;align-items:center;gap:12px;margin:8px 0 18px
+}
+.hints,.guess,.attempts{
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:14px;margin-bottom:12px
+}
+
 .footer{margin-top:18px;color:var(--muted)}
 
 /* ===== Buttons & Inputs ===== */
 button,input{font:inherit}
 button{
-  padding:10px 14px;border:none;border-radius:10px;background:var(--accent);color:#04110a;cursor:pointer
+  padding:10px 14px;border:none;border-radius:10px;
+  background:var(--accent);color:#04110a;cursor:pointer
 }
 button.secondary{background:#1e293b;color:var(--fg);border:1px solid var(--border)}
 button:hover{filter:brightness(1.05)}
+button:disabled{opacity:.5;cursor:not-allowed}
+
 input{
-  width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#0d1425;color:var(--fg)
+  width:100%;padding:10px 12px;border:1px solid var(--border);
+  border-radius:10px;background:#0d1425;color:var(--fg)
 }
 .input-row{display:flex;gap:8px}
 
-/* ===== Auth box ===== */
+/* ===== Auth box (header) ===== */
 .auth-box{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .auth-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .balance{background:var(--panel-2);border:1px solid var(--border);padding:6px 10px;border-radius:10px}
 .muted{color:var(--muted)}
 .small{font-size:12px}
 
-/* ===== Suggestions ===== */
+/* ===== Suggestions (autocomplete) ===== */
 .suggestions{position:relative}
 .suggestions ul{
   position:absolute;z-index:20;left:0;right:0;max-height:260px;overflow:auto;
@@ -49,7 +85,7 @@ input{
 .suggestions li:last-child{border-bottom:none}
 .suggestions li:hover{background:#16203a}
 
-/* ===== Result ===== */
+/* ===== Result text ===== */
 .result{font-weight:600;margin:8px 0}
 .result.ok{color:#86efac}
 .result.bad{color:#fca5a5}
@@ -64,3 +100,18 @@ input{
 .modal h3{margin:0 0 8px}
 .form-row{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
 .row-gap{display:flex;gap:8px;margin-top:10px}
+
+/* ===== Auth Gate & Game Lock ===== */
+#authGate{border:1px dashed var(--border);background:var(--panel-2)}
+/* vizuelno “zaključaj” igru dok nije ulogovan (script.js dodaje/uklanja disabled na kontrolama) */
+.blocked{
+  filter:grayscale(.2) opacity(.75);
+  pointer-events:none;                      /* nema interakcije */
+}
+
+/* ===== Leaderboard ===== */
+#leaderboard h3{margin:0 0 10px}
+#lbList li{
+  padding:6px 0;border-bottom:1px solid var(--border)
+}
+#lbList li:last-child{border-bottom:none}
