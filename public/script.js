@@ -138,14 +138,21 @@
     return playersAll[Math.floor(Math.random() * playersAll.length)];
   }
 
-  function renderHints() {
-    const s = (target && target.stats) || {};
-    const out = [`PTS: ${fmt(s.pts)}, 2P%: ${fmt(s.twoPct)}, 3P%: ${fmt(s.threePct)}`];
-    if (revealed >= 1) out.push(`Position: ${safe(target.position)}`);
-    if (revealed >= 2) out.push(`Country: ${safe(target.country)}`);
-    if (revealed >= 3) out.push(`Team: ${safe(target.team)}`);
-    $("#hintsList").innerHTML = out.map(x => `<li>${x}</li>`).join("");
-  }
+ function renderHints() {
+  const s = (target && target.stats) || {};
+  const out = [
+    `PTS: ${fmt(s.pts)}`,
+    `2P%: ${fmt(s.twoPct)}`,
+    `3P%: ${fmt(s.threePct)}`,
+    `AST: ${fmt(s.ast)}`,
+    `TR: ${fmt(s.tr)}`
+  ];
+  if (revealed >= 1) out.push(`Position: ${safe(target.position)}`);
+  if (revealed >= 2) out.push(`Country: ${safe(target.country)}`);
+  if (revealed >= 3) out.push(`Team: ${safe(target.team)}`);
+  $("#hintsList").innerHTML = out.map(x => `<li>${x}</li>`).join("");
+}
+
 
   function reset() {
     target = pickRandom();
