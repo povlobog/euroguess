@@ -1,117 +1,75 @@
-// script.js — EuroGuess frontend (LOCAL <-> API auth preklopnik)
 (function () {
   const $ = (s) => document.querySelector(s);
 
-  // ================== PODESAVANJE ==================
+  // === API base: produkcija => isti origin, lokalno => localhost:8080 ===
   const BASE_API =
-  (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-    ? 'http://localhost:8080'
-    : ''; 
-  const AUTH_MODE = "local";                  // "local" (danas) -> promeni u "api" kad ubacimo server auth
+    (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? 'http://localhost:8080'
+      : ''; // relativni put na istom originu
 
-  // ================== STATE ==================
-  let playersAll = [];            // svi igrači (GP >= 10) iz API-ja
-  let validNames = new Set();     // skup normalizovanih imena (samo iz baze)
+  // ===== STATE =====
+  let playersAll = [];            // skup igrača (GP >= 10)
+  let validNames = new Set();     // skup normalizovanih imena
   let target = null, attempts = 0, revealed = 0, over = false;
   let tried = new Set();          // sprečava duple pokušaje
 
-  // ================== SCORING ==================
+  // ===== SCORING =====
   function pointsForAttempt(n) {
     const table = [100, 70, 50, 35, 25, 18, 12, 8, 5, 3]; // 1..10
     return n >= 1 && n <= table.length ? table[n - 1] : 0;
   }
 
-  // ================== AUTH PROVIDERS ==================
-  // -- LOCAL (trenutno aktivan) --
-  const LocalAuth = (() => {
-    const LS_USERS   = "EG_USERS_V1";
-    const LS_SESSION = "EG_SESSION_V1";
+  // ===== AUTH (pravi API) =====
+  const LS_TOKEN = 'EG_JWT_V1';
 
-    const loadUsers = () => { try { return JSON.parse(localStorage.getItem(LS_USERS)) || []; } catch { return []; } };
-    const saveUsers = (u) => localStorage.setItem(LS_USERS, JSON.stringify(u));
-    const setSession = (u) => localStorage.setItem(LS_SESSION, u);
-    const clearSession = () => localStorage.removeItem(LS_SESSION);
+  function saveToken(t) { localStorage.setItem(LS_TOKEN, t); }
+  function getToken()   { return localStorage.getItem(LS_TOKEN); }
+  function clearToken() { localStorage.removeItem(LS_TOKEN); }
 
-    function currentUser() {
-      const u = localStorage.getItem(LS_SESSION);
-      if (!u) return null;
-      return loadUsers().find(x => x.username === u) || null;
-    }
-    function getBalance() { const u = currentUser(); return u ? (u.balance || 0) : 0; }
-    function addBalance(pts) {
-      const u = currentUser(); if (!u) return;
-      const list = loadUsers(); const i = list.findIndex(x => x.username === u.username);
-      if (i >= 0) { list[i].balance = (list[i].balance || 0) + pts; saveUsers(list); }
-    }
-    function register(username, password) {
-      username = (username || "").trim(); password = (password || "").trim();
-      if (!username || !password) throw new Error("Missing fields");
-      const list = loadUsers();
-      if (list.some(u => u.username.toLowerCase() === username.toLowerCase()))
-        throw new Error("Username already exists");
-      list.push({ username, password, balance: 0 }); saveUsers(list); setSession(username);
-      return { username, balance: 0 };
-    }
-    function login(username, password) {
-      const u = loadUsers().find(x => x.username === username && x.password === password);
-      if (!u) throw new Error("Invalid credentials");
-      setSession(u.username); return { username: u.username, balance: u.balance };
-    }
-    return {
-      type: "local",
-      async register(u,p){ return register(u,p); },
-      async login(u,p){ return login(u,p); },
-      async logout(){ clearSession(); },
-      async me(){ const u = currentUser(); return u ? { username:u.username, balance:u.balance } : null; },
-      async getBalance(){ return getBalance(); },
-      async addBalance(pts){ return addBalance(pts); },
-    };
-  })();
+  async function apiRegister(username, password) {
+    const r = await fetch(`${BASE_API}/auth/register`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Register failed');
+    return r.json(); // {token, user:{username,balance}}
+  }
 
-  // -- API (aktiviraj kasnije menjanjem AUTH_MODE="api") --
-  const ApiAuth = (() => {
-    const LS_TOKEN = "EG_TOKEN_V1";
-    const setToken = (t) => localStorage.setItem(LS_TOKEN, t);
-    const getToken = () => localStorage.getItem(LS_TOKEN);
-    const clearToken = () => localStorage.removeItem(LS_TOKEN);
+  async function apiLogin(username, password) {
+    const r = await fetch(`${BASE_API}/auth/login`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Login failed');
+    return r.json(); // {token, user:{username,balance}}
+  }
 
-    async function api(path, opts = {}) {
-      const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
-      const token = getToken();
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`${BASE_API}${path}`, Object.assign({}, opts, { headers }));
-      return res;
-    }
-    return {
-      type: "api",
-      async register(username, password){
-        const res = await api("/auth/register", { method:"POST", body: JSON.stringify({ username, password }) });
-        const data = await res.json(); if(!res.ok) throw new Error(data.error || "Register failed");
-        setToken(data.token); return { username: data.user.username, balance: data.user.balance };
+  async function apiMe() {
+    const tok = getToken(); if (!tok) return null;
+    const r = await fetch(`${BASE_API}/me`, {
+      headers: { Authorization: `Bearer ${tok}` }
+    });
+    if (!r.ok) return null;
+    return r.json(); // {username, balance}
+  }
+
+  async function apiAddBalance(points) {
+    const tok = getToken(); if (!tok) throw new Error('Not signed in');
+    const r = await fetch(`${BASE_API}/me/balance/add`, {
+      method: 'POST',
+      headers: {
+        'Content-Type':'application/json',
+        Authorization: `Bearer ${tok}`
       },
-      async login(username, password){
-        const res = await api("/auth/login", { method:"POST", body: JSON.stringify({ username, password }) });
-        const data = await res.json(); if(!res.ok) throw new Error(data.error || "Login failed");
-        setToken(data.token); return { username: data.user.username, balance: data.user.balance };
-      },
-      async logout(){ clearToken(); },
-      async me(){
-        const token = getToken(); if(!token) return null;
-        const res = await api("/me"); if(!res.ok){ clearToken(); return null; }
-        const data = await res.json(); return { username: data.username, balance: data.balance };
-      },
-      async getBalance(){
-        const u = await this.me(); return u ? (u.balance || 0) : 0;
-      },
-      async addBalance(points){
-        await api("/me/balance/add", { method:"POST", body: JSON.stringify({ points }) });
-      },
-    };
-  })();
+      body: JSON.stringify({ points })
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Balance add failed');
+    return r.json(); // {balance}
+  }
 
-  const Auth = (AUTH_MODE === "api") ? ApiAuth : LocalAuth;
-
-  // ================== UI REFS ==================
+  // ===== UI refs =====
   const ui = {
     authStatus: $("#authStatus"),
     balanceBox: $("#balanceBox"),
@@ -136,23 +94,25 @@
   const open  = (m)  => { show(ui.modalMask); show(m); };
   const close = ()    => { hide(ui.modalMask); hide(ui.loginModal); hide(ui.registerModal); };
 
+  // ==== AUTH UI ====
   async function refreshAuthUI() {
-    const user = await Auth.me();
-    if (!user) {
+    const me = await apiMe();
+    if (!me) {
       ui.authStatus.textContent = "Not signed in";
       hide(ui.logoutBtn); show(ui.openLoginBtn); show(ui.openRegisterBtn); hide(ui.balanceBox);
-    } else {
-      ui.authStatus.textContent = `Signed in as ${user.username}`;
-      show(ui.logoutBtn); hide(ui.openLoginBtn); hide(ui.openRegisterBtn); show(ui.balanceBox);
-      ui.balanceVal.textContent = user.balance;
+      ui.balanceVal.textContent = '0';
+      return;
     }
+    ui.authStatus.textContent = `Signed in as ${me.username}`;
+    show(ui.logoutBtn); hide(ui.openLoginBtn); hide(ui.openRegisterBtn); show(ui.balanceBox);
+    ui.balanceVal.textContent = me.balance ?? 0;
   }
 
-  // ================== API HELPERS ==================
+  // ===== API helpers =====
   async function fetchAllPlayers() {
     const res = await fetch(`${BASE_API}/players`);
     if (!res.ok) throw new Error("Failed to load players");
-    return await res.json();
+    return await res.json(); // [{name, team, country, position, stats:{...}}, ...]
   }
   async function fetchSuggestions(prefix) {
     if (!prefix) return [];
@@ -161,13 +121,17 @@
     return await res.json();
   }
 
-  // ================== GAME ==================
+  // ===== GAME =====
   const normalize = (s) => (s || "").trim().toLowerCase();
   function fmt(v) { if (v == null) return "?"; return typeof v === "number" ? Math.round(v * 10) / 10 : v; }
   const safe = (s) => s || "?";
 
-  function buildValidNameSet(list) { validNames = new Set(list.map(p => normalize(p.name))); }
-  function isValidName(name) { return validNames.has(normalize(name)); }
+  function buildValidNameSet(list) {
+    validNames = new Set(list.map(p => normalize(p.name)));
+  }
+  function isValidName(name) {
+    return validNames.has(normalize(name));
+  }
 
   function pickRandom() {
     if (!playersAll.length) return null;
@@ -205,7 +169,7 @@
     const val = input.value.trim();
     if (!val) return;
 
-    // dozvoljeno samo ime iz baze (klik iz predloga)
+    // Dozvoli samo imena iz baze (klik iz predloga)
     if (!isValidName(val)) {
       $("#result").textContent = "⚠️ Izaberi igrača iz liste (klik na predlog). Slobodan unos nije dozvoljen.";
       $("#result").className = "result bad";
@@ -214,7 +178,7 @@
 
     const norm = normalize(val);
 
-    // bez duplih pokušaja
+    // blokiraj dupli pokušaj
     if (tried.has(norm)) {
       input.value = "";
       $("#result").textContent = "⚠️ Već si pokušao tog igrača. Izaberi nekog drugog.";
@@ -250,20 +214,35 @@
     over = true;
     const pts = pointsForAttempt(attempts);
 
-    await Auth.addBalance(pts);   // local ili api, zavisi od AUTH_MODE
-    await refreshAuthUI();
+    // ako je ulogovan — sačuvaj poene u bazi
+    try {
+      const tok = getToken();
+      if (tok) {
+        const { balance } = await apiAddBalance(pts);
+        ui.balanceVal.textContent = balance ?? 0;
+      } else {
+        // nije ulogovan — samo upozorenje, igra radi
+        console.warn('Not signed in, points not saved.');
+      }
+    } catch (e) {
+      console.error(e);
+    }
 
     $("#result").textContent = `🎉 Correct! It was ${target.name} — +${pts} pts`;
     $("#result").className = "result ok";
     ui.statusText.textContent = "Finished (WIN)";
   }
 
-  // ================== AUTOCOMPLETE ==================
+  // Debounce util
   function debounce(fn, wait = 200) {
     let t = null;
-    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), wait);
+    };
   }
 
+  // Autocomplete: API ?q= prefix (od 1 slova, sa debounce; filtrira već pokušane)
   const handleSuggest = debounce(async (q) => {
     const box = $("#suggestions");
     const prefix = q.trim();
@@ -276,7 +255,9 @@
 
     try {
       const list = await fetchSuggestions(prefix);
-      const filtered = list.filter(p => !tried.has(normalize(p.name))).slice(0, 8);
+      const filtered = list
+        .filter(p => !tried.has(normalize(p.name)))
+        .slice(0, 8);
 
       if (!filtered.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
 
@@ -297,9 +278,9 @@
     }
   }, 200);
 
-  // ================== EVENTS & INIT ==================
   function attachEvents() {
     $("#newGameBtn").addEventListener("click", reset);
+
     $("#submitGuessBtn").addEventListener("click", submitGuess);
     $("#guessInput").addEventListener("keydown", e => { if (e.key === "Enter") submitGuess(); });
     $("#guessInput").addEventListener("input", e => handleSuggest(e.target.value));
@@ -309,39 +290,57 @@
       if (s && !s.contains(e.target) && e.target.id !== "guessInput") s.classList.add("hidden");
     });
 
-    // auth open/close
+    // auth modali
     $("#openLoginBtn").addEventListener("click", () => open($("#loginModal")));
     $("#openRegisterBtn").addEventListener("click", () => open($("#registerModal")));
-    $("#logoutBtn").addEventListener("click", async () => { await Auth.logout(); await refreshAuthUI(); });
+    $("#logoutBtn").addEventListener("click", () => { clearToken(); refreshAuthUI(); });
 
-    // auth submit
+    // submit login/register
     $("#loginSubmit").addEventListener("click", async () => {
       try {
-        await Auth.login($("#loginUser").value, $("#loginPass").value);
+        const out = await apiLogin($("#loginUser").value, $("#loginPass").value);
+        saveToken(out.token);
         alert("✅ Uspešno ste se prijavili!");
-        close(); await refreshAuthUI();
-      } catch (err) { alert("❌ Neuspešan login: " + err.message); }
-    });
-    $("#registerSubmit").addEventListener("click", async () => {
-      try {
-        await Auth.register($("#regUser").value, $("#regPass").value);
-        alert("✅ Uspešno ste se registrovali!");
-        close(); await refreshAuthUI();
-      } catch (err) { alert("❌ Greška: " + err.message); }
+        close();
+        await refreshAuthUI();
+      } catch (err) {
+        alert("❌ Neuspešan login: " + err.message);
+      }
     });
 
+    $("#registerSubmit").addEventListener("click", async () => {
+      try {
+        const out = await apiRegister($("#regUser").value, $("#regPass").value);
+        saveToken(out.token);
+        alert("✅ Uspešno ste se registrovali!");
+        close();
+        await refreshAuthUI();
+      } catch (err) {
+        alert("❌ Greška: " + err.message);
+      }
+    });
+
+    // zatvaranje modala klikom na masku ili Escape
     $("#modalMask").addEventListener("click", close);
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
   }
 
+  // ===== INIT =====
   (async function init() {
     attachEvents();
-    await refreshAuthUI();
     ui.statusText.textContent = "Loading players…";
+
     try {
-      playersAll = await fetchAllPlayers();
-      validNames = new Set(playersAll.map(p => (p.name || "").trim().toLowerCase()));
-      if (!playersAll.length) { ui.statusText.textContent = "No players loaded from API."; return; }
+      // auth UI (ako već postoji token)
+      await refreshAuthUI();
+
+      // igrači
+      playersAll = await fetchAllPlayers();      // backend već filtrira GP ≥ 10
+      validNames = new Set(playersAll.map(p => normalize(p.name)));
+      if (!playersAll.length) {
+        ui.statusText.textContent = "No players loaded from API.";
+        return;
+      }
       reset();
     } catch (e) {
       console.error(e);
