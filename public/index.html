@@ -8,6 +8,8 @@
 </head>
 <body>
   <div class="container">
+
+    <!-- HEADER -->
     <header class="header">
       <div>
         <h1>EuroGuess</h1>
@@ -25,51 +27,77 @@
       </div>
     </header>
 
-    <section class="controls">
-      <button id="newGameBtn">New Game</button>
-      <div class="stats">
-        <span id="statusText">Click “New Game” to start</span>
-      </div>
-    </section>
+    <!-- MAIN LAYOUT: content + right sidebar -->
+    <div class="layout">
+      <main class="main">
 
-    <section id="gameBox" class="hidden">
-      <div class="hints">
-        <h2>Hints</h2>
-        <ul id="hintsList"></ul>
-      </div>
-
-      <div id="result" class="result"></div>
-
-      <div class="guess">
-        <h2>Your Guess</h2>
-        <div class="input-row">
-          <input id="guessInput" type="text" placeholder="Type a player name... (prefix match)" autocomplete="off" />
-          <button id="submitGuessBtn">Submit</button>
+        <!-- AUTH GATE: traži login pre igre (script.js ga prikazuje/sakriva) -->
+        <div id="authGate" class="card hidden" style="margin:12px 0;">
+          <p style="margin:0;">🔒 Please log in or register to play.</p>
         </div>
-        <div id="suggestions" class="suggestions hidden"></div>
-      </div>
 
-      <div class="attempts">
-        <h3>Attempts</h3>
-        <ol id="attemptsList"></ol>
-      </div>
-    </section>
+        <!-- CONTROLS -->
+        <section class="controls">
+          <button id="newGameBtn">New Game</button>
+          <div class="stats">
+            <span id="statusText">Click “New Game” to start</span>
+          </div>
+        </section>
 
-    <footer class="footer">
-    </footer>
+        <!-- GAME -->
+        <section id="gameBox" class="hidden">
+          <div class="hints">
+            <h2>Hints</h2>
+            <ul id="hintsList"></ul>
+          </div>
+
+          <div id="result" class="result"></div>
+
+          <div class="guess">
+            <h2>Your Guess</h2>
+            <div class="input-row">
+              <input
+                id="guessInput"
+                type="text"
+                placeholder="Type a player name… (pick from suggestions)"
+                autocomplete="off"
+              />
+              <button id="submitGuessBtn">Submit</button>
+            </div>
+            <div id="suggestions" class="suggestions hidden"></div>
+          </div>
+
+          <div class="attempts">
+            <h3>Attempts</h3>
+            <ol id="attemptsList"></ol>
+          </div>
+        </section>
+
+      </main>
+
+      <!-- SIDEBAR: Leaderboard -->
+      <aside class="sidebar">
+        <div id="leaderboard" class="card">
+          <h3 style="margin-top:0;">🏆 Leaderboard (Top 10)</h3>
+          <ol id="lbList" style="margin:0; padding-left:20px;"></ol>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="footer"></footer>
   </div>
 
-  <!-- AUTH MODALS -->
+  <!-- MODALS -->
   <div id="modalMask" class="modal-mask hidden"></div>
 
-  <div id="loginModal" class="modal hidden">
-    <h3>Login</h3>
+  <div id="loginModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <h3 id="loginTitle">Login</h3>
     <div class="form-row">
-      <label>Username</label>
+      <label for="loginUser">Username</label>
       <input id="loginUser" type="text" autocomplete="username" />
     </div>
     <div class="form-row">
-      <label>Password</label>
+      <label for="loginPass">Password</label>
       <input id="loginPass" type="password" autocomplete="current-password" />
     </div>
     <div class="row-gap">
@@ -77,14 +105,14 @@
     </div>
   </div>
 
-  <div id="registerModal" class="modal hidden">
-    <h3>Register</h3>
+  <div id="registerModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="registerTitle">
+    <h3 id="registerTitle">Register</h3>
     <div class="form-row">
-      <label>Username</label>
+      <label for="regUser">Username</label>
       <input id="regUser" type="text" autocomplete="username" />
     </div>
     <div class="form-row">
-      <label>Password</label>
+      <label for="regPass">Password</label>
       <input id="regPass" type="password" autocomplete="new-password" />
     </div>
     <div class="row-gap">
